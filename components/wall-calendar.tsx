@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import { enGB, enUS, ja } from "date-fns/locale";
 import type { Locale } from "date-fns";
-import html2canvas from "html2canvas";
+import { toPng } from "html-to-image";
 import Image, { StaticImageData } from "next/image";
 import { type CSSProperties, type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -140,10 +140,9 @@ export function WallCalendar() {
   const [monthEditing, setMonthEditing] = useState(true);
   const [rangeEditing, setRangeEditing] = useState(false);
   const [dynamicTheme, setDynamicTheme] = useState<MonthTheme | null>(null);
-  const [downloadPending, setDownloadPending] = useState(false);
   const [glowState, setGlowState] = useState({ x: 0, y: 0, visible: false });
 
-  const captureRef = useRef<HTMLDivElement | null>(null);
+  const calendarRef = useRef<HTMLDivElement | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
   const flipTimerRef = useRef<number | null>(null);
 
@@ -170,6 +169,7 @@ export function WallCalendar() {
   const monthNote = monthNotes[monthKey] ?? "";
   const rangeKey = getRangeKey(range.start, range.end);
   const activeRangeNote = rangeKey ? rangeNotes[rangeKey] ?? "" : "";
+  const glowColor = useMemo(() => hexToRgba(theme.accent, 0.35), [theme.accent]);
   const monthName = new Intl.DateTimeFormat(timeContext.locale, {
     month: "long",
     timeZone: timeContext.timeZone,
@@ -324,28 +324,30 @@ export function WallCalendar() {
     }));
   }
 
-  async function downloadMonthImage() {
-    if (!captureRef.current) {
+  const handleDownload = async () => {
+    if (!calendarRef.current) {
+      console.error("Calendar ref is not attached.");
       return;
     }
 
-    setDownloadPending(true);
-
     try {
-      const canvas = await html2canvas(captureRef.current, {
-        useCORS: true,
-        scale: 2,
-        backgroundColor: null,
+      const dataUrl = await toPng(calendarRef.current, {
+        cacheBust: true,
+        backgroundColor: "#f3f4f6",
+        pixelRatio: 2,
       });
 
       const link = document.createElement("a");
-      link.download = `wallcal-${monthName.toLowerCase()}-${CALENDAR_YEAR}.png`;
-      link.href = canvas.toDataURL("image/png");
+      link.download = "my-calendar-month.png";
+      link.href = dataUrl;
+      document.body.appendChild(link);
       link.click();
-    } finally {
-      setDownloadPending(false);
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error("Failed to export calendar:", error);
+      alert("Oops! Could not download the image. Check the console.");
     }
-  }
+  };
 
   function onGridMouseMove(event: MouseEvent<HTMLDivElement>) {
     if (!gridRef.current) {
@@ -376,7 +378,7 @@ export function WallCalendar() {
         } as CSSProperties
       }
     >
-      <div ref={captureRef} className="sheet-shell rounded-[2rem] p-2 shadow-[0_26px_70px_rgba(16,26,40,0.2)]">
+      <div ref={calendarRef} className="sheet-shell rounded-[2rem] p-2 shadow-[0_26px_70px_rgba(16,26,40,0.2)]">
         <div className="calendar-shell relative overflow-hidden rounded-[1.6rem]">
           <div className="pin-icon absolute left-1/2 top-1 -translate-x-1/2" aria-hidden="true">
             <span className="pin-head" />
@@ -520,11 +522,10 @@ export function WallCalendar() {
                     </button>
                     <button
                       type="button"
-                      onClick={downloadMonthImage}
-                      disabled={downloadPending}
+                      onClick={handleDownload}
                       className="rounded-full bg-[color:var(--accent)] px-3 py-2 text-xs font-semibold uppercase tracking-wider text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {downloadPending ? "Exporting..." : "Download Month"}
+                      Download Month
                     </button>
                   </div>
                 </div>
@@ -563,8 +564,7 @@ export function WallCalendar() {
                     transition={{ type: "spring", stiffness: 180, damping: 24 }}
                     className="pointer-events-none absolute z-0 h-60 w-60 rounded-full"
                     style={{
-                      background:
-                        "radial-gradient(circle, color-mix(in srgb, var(--accent) 38%, transparent) 0%, transparent 70%)",
+                      background: `radial-gradient(circle, ${glowColor} 0%, rgba(0,0,0,0) 70%)`,
                     }}
                   />
 
@@ -792,6 +792,11 @@ function parseHex(hex: string): { red: number; green: number; blue: number } {
   const green = Number.parseInt(cleaned.slice(2, 4), 16);
   const blue = Number.parseInt(cleaned.slice(4, 6), 16);
   return { red, green, blue };
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const { red, green, blue } = parseHex(hex);
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }
 
 function NoteEditor({
