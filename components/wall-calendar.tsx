@@ -126,7 +126,7 @@ export function WallCalendar() {
     return new Date(CALENDAR_YEAR, now.getMonth(), 1);
   });
   const [monthDirection, setMonthDirection] = useState(1);
-  const [flipPhase, setFlipPhase] = useState<"idle" | "exit" | "enter">("idle");
+  const [flipPhase, setFlipPhase] = useState<"idle" | "turning">("idle");
   const [timeContext, setTimeContext] = useState<TimeContext>(TIME_CONTEXTS[0]);
   const [range, setRange] = useState<DateRange>({ start: null, end: null });
   const [monthNotes, setMonthNotes] = useState<Record<string, string>>(() => {
@@ -144,7 +144,9 @@ export function WallCalendar() {
 
   const calendarRef = useRef<HTMLDivElement | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
-  const flipTimerRef = useRef<number | null>(null);
+  const flipCommitTimerRef = useRef<number | null>(null);
+  const flipFinishTimerRef = useRef<number | null>(null);
+  const isFlipping = flipPhase === "turning";
 
   const monthKey = getMonthKey(monthDate);
   const todayInContext = useMemo(
@@ -172,12 +174,10 @@ export function WallCalendar() {
   const glowColor = useMemo(() => hexToRgba(theme.accent, 0.35), [theme.accent]);
   const monthName = new Intl.DateTimeFormat(timeContext.locale, {
     month: "long",
-    timeZone: timeContext.timeZone,
   }).format(monthDate);
   const monthYearLabel = new Intl.DateTimeFormat(timeContext.locale, {
     month: "long",
     year: "numeric",
-    timeZone: timeContext.timeZone,
   }).format(monthDate);
 
   useEffect(() => {
@@ -213,8 +213,11 @@ export function WallCalendar() {
 
   useEffect(() => {
     return () => {
-      if (flipTimerRef.current) {
-        window.clearTimeout(flipTimerRef.current);
+      if (flipCommitTimerRef.current) {
+        window.clearTimeout(flipCommitTimerRef.current);
+      }
+      if (flipFinishTimerRef.current) {
+        window.clearTimeout(flipFinishTimerRef.current);
       }
     };
   }, []);
@@ -261,26 +264,30 @@ export function WallCalendar() {
 
   function animateToMonth(targetMonth: number, direction: number) {
     const currentMonth = monthDate.getMonth();
-    if (targetMonth === currentMonth) {
+    if (targetMonth === currentMonth || isFlipping) {
       return;
     }
 
-    if (flipTimerRef.current) {
-      window.clearTimeout(flipTimerRef.current);
+    if (flipCommitTimerRef.current) {
+      window.clearTimeout(flipCommitTimerRef.current);
+    }
+    if (flipFinishTimerRef.current) {
+      window.clearTimeout(flipFinishTimerRef.current);
     }
 
     setMonthDirection(direction);
-    setFlipPhase("exit");
+    setFlipPhase("turning");
     clearRange();
 
-    flipTimerRef.current = window.setTimeout(() => {
-      setMonthDate(new Date(CALENDAR_YEAR, targetMonth, 1));
-      setFlipPhase("enter");
+    const nextDate = new Date(CALENDAR_YEAR, targetMonth, 1);
 
-      flipTimerRef.current = window.setTimeout(() => {
-        setFlipPhase("idle");
-      }, 320);
-    }, 320);
+    flipCommitTimerRef.current = window.setTimeout(() => {
+      setMonthDate(nextDate);
+    }, 420);
+
+    flipFinishTimerRef.current = window.setTimeout(() => {
+      setFlipPhase("idle");
+    }, 840);
   }
 
   function goToMonth(offset: number) {
@@ -397,19 +404,18 @@ export function WallCalendar() {
                 className={[
                   "month-flip-base month-flip-hero relative h-full overflow-hidden",
                   monthDirection > 0 ? "month-flip-forward" : "month-flip-backward",
-                  flipPhase === "exit" ? "flip-exit" : "",
-                  flipPhase === "enter" ? "flip-enter" : "",
+                  flipPhase === "turning" ? "flip-turning" : "",
                 ].join(" ")}
               >
                 <Image
                   src={heroImage}
                   alt={`${monthYearLabel} hero view`}
                   fill
+                  sizes="(max-width: 640px) 100vw, (max-width: 1280px) 90vw, 1024px"
                   priority
                   className="object-cover"
                 />
                 <div className="absolute inset-0 bg-gradient-to-b from-zinc-900/15 via-zinc-900/5 to-zinc-900/40" />
-                <div className="calendar-cutout" />
                 <div className="crescent-badge absolute left-6 top-6 h-12 w-12 rounded-full bg-[color:var(--crescent)]/90" />
 
                 <div className="absolute right-6 top-6 rounded-2xl bg-black/25 px-4 py-2 text-right text-white backdrop-blur-sm">
@@ -465,8 +471,7 @@ export function WallCalendar() {
                 className={[
                   "month-flip-base month-flip-panel calendar-card rounded-3xl p-4 shadow-[0_12px_28px_rgba(22,30,44,0.08)] md:p-5",
                   monthDirection > 0 ? "month-flip-forward" : "month-flip-backward",
-                  flipPhase === "exit" ? "flip-exit" : "",
-                  flipPhase === "enter" ? "flip-enter" : "",
+                  flipPhase === "turning" ? "flip-turning" : "",
                 ].join(" ")}
               >
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -494,6 +499,7 @@ export function WallCalendar() {
                       type="button"
                       onClick={() => goToMonth(-1)}
                       aria-label="Previous month"
+                      disabled={isFlipping}
                       className="calendar-strong flex h-9 w-9 items-center justify-center rounded-full border border-zinc-200 transition hover:border-[color:var(--secondary)] hover:text-[color:var(--ink)]"
                     >
                       <span className="text-lg leading-none">&larr;</span>
@@ -501,6 +507,7 @@ export function WallCalendar() {
                     <button
                       type="button"
                       onClick={jumpToCurrentMonth}
+                      disabled={isFlipping}
                       className="rounded-full bg-[color:var(--crescent)]/35 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-[color:var(--ink)] transition hover:bg-[color:var(--crescent)]/55"
                     >
                       Today
@@ -509,6 +516,7 @@ export function WallCalendar() {
                       type="button"
                       onClick={() => goToMonth(1)}
                       aria-label="Next month"
+                      disabled={isFlipping}
                       className="calendar-strong flex h-9 w-9 items-center justify-center rounded-full border border-zinc-200 transition hover:border-[color:var(--secondary)] hover:text-[color:var(--ink)]"
                     >
                       <span className="text-lg leading-none">&rarr;</span>
@@ -523,7 +531,7 @@ export function WallCalendar() {
                     <button
                       type="button"
                       onClick={handleDownload}
-                      className="rounded-full bg-[color:var(--accent)] px-3 py-2 text-xs font-semibold uppercase tracking-wider text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="rounded-full bg-[color:var(--accent)] px-3 py-2 text-xs font-semibold uppercase tracking-wider text-white transition hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Download Month
                     </button>

@@ -8,11 +8,21 @@ const STORAGE_KEY = "wallcal-theme-mode";
 const THEMES: ThemeMode[] = ["light", "dark", "night"];
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<ThemeMode>(() => readInitialTheme());
+  const [theme, setTheme] = useState<ThemeMode>("light");
 
   function applyTheme(mode: ThemeMode) {
     document.documentElement.setAttribute("data-theme", mode);
   }
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(STORAGE_KEY) as ThemeMode | null;
+    if (saved && THEMES.includes(saved)) {
+      setTheme(saved);
+      return;
+    }
+
+    applyTheme("light");
+  }, []);
 
   useEffect(() => {
     applyTheme(theme);
@@ -44,13 +54,4 @@ export function ThemeToggle() {
       </div>
     </div>
   );
-}
-
-function readInitialTheme(): ThemeMode {
-  if (typeof window === "undefined") {
-    return "light";
-  }
-
-  const saved = window.localStorage.getItem(STORAGE_KEY) as ThemeMode | null;
-  return saved && THEMES.includes(saved) ? saved : "light";
 }
